@@ -5,22 +5,13 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import axios from 'axios';
-
-const WEATHER_API_KEY = process.env.EXPO_PUBLIC_WEATHER_API_KEY;
-
-const STREET_LIGHTS = [
-  { id: 1, name: 'Street Light 1' },
-  { id: 2, name: 'Street Light 2' },
-  { id: 3, name: 'Street Light 3' },
-  { id: 4, name: 'Street Light 4' },
-  { id: 5, name: 'Street Light 5' },
-];
+import { API_URL } from '../config';
 
 export default function WeatherScreen({ onLocationUpdate }) {
   const [location, setLocation] = useState(null);
   const [weather, setWeather] = useState(null);
   const [sunData, setSunData] = useState(null);
-  const [lightStatuses, setLightStatuses] = useState({});
+  const [lightStatus, setLightStatus] = useState(null);
   const [placeName, setPlaceName] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -53,7 +44,7 @@ export default function WeatherScreen({ onLocationUpdate }) {
         setPlaceName(`${p.city || p.district || p.name}, ${p.region}, ${p.country}`);
       }
 
-      await Promise.all([fetchWeather(coords), fetchSun(coords), fetchAllLightStatuses(coords)]);
+      await Promise.all([fetchWeather(coords), fetchSun(coords), fetchLightStatus(coords)]);
     } catch (e) {
       Alert.alert('Error', 'Failed to fetch data.');
       console.error(e);
@@ -63,8 +54,8 @@ export default function WeatherScreen({ onLocationUpdate }) {
   };
 
   const fetchWeather = async (coords) => {
-    const { data } = await axios.get('https://api.openweathermap.org/data/2.5/weather', {
-      params: { lat: coords.latitude, lon: coords.longitude, appid: WEATHER_API_KEY, units: 'metric' },
+    const { data } = await axios.get(`${API_URL}/api/weather`, {
+      params: { lat: coords.latitude, lon: coords.longitude },
     });
     setWeather(data);
   };
@@ -76,22 +67,25 @@ export default function WeatherScreen({ onLocationUpdate }) {
     setSunData(data.results);
   };
 
-  const fetchAllLightStatuses = async (coords) => {
-    const hour = new Date().getHours();
-    const defaultStatus = hour >= 18 || hour < 6 ? 'ON' : 'OFF';
-    const statuses = {};
-    for (const light of STREET_LIGHTS) {
-      try {
-        const { data } = await axios.get('https://your-backend.com/light-status', {
-          params: { lat: coords.latitude, lng: coords.longitude, id: light.id },
-          timeout: 3000,
-        });
-        statuses[light.id] = data.status;
-      } catch {
-        statuses[light.id] = defaultStatus;
-      }
+  const formatTime = (isoString) => {
+    if (!isoString) return '--';
+    const date = new Date(isoString);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+  };
+
+  const fetchLightStatus = async (coords) => {
+    try {
+      const hour = new Date().getHours();
+      const defaultStatus = hour >= 18 || hour < 6 ? 'ON' : 'OFF';
+      const { data } = await axios.get(`${API_URL}/api/lights/status`, {
+        params: { lat: coords.latitude, lon: coords.longitude, motion: false, ldr: 500 },
+        timeout: 3000,
+      });
+      setLightStatus(data.lightOn ? 'ON' : 'OFF');
+    } catch {
+      const hour = new Date().getHours();
+      setLightStatus(hour >= 18 || hour < 6 ? 'ON' : 'OFF');
     }
-    setLightStatuses(statuses);
   };
 
   if (loading) {
@@ -112,81 +106,77 @@ export default function WeatherScreen({ onLocationUpdate }) {
       <View style={styles.header}>
         <Text style={styles.headerEmoji}>🌆</Text>
         <Text style={styles.headerTitle}>Smart Street Light</Text>
-        {placeName ? <Text style={styles.headerPlace}>{placeName}</Text> : null}
+        {placeName ? <Text style={styles.headerPlace}>📍 {placeName}</Text> : null}
       </View>
 
       {/* Weather Big Card */}
       {weather && (
         <View style={styles.weatherBig}>
-          <Text style={styles.weatherTemp}>{Math.round(weather.main.temp)}°C</Text>
-          <Text style={styles.weatherDesc}>{weather.weather[0].description.toUpperCase()}</Text>
+          <Text style={styles.weatherTemp}>{Math.round(weather.temperature)}°C</Text>
+          <Text style={styles.weatherDesc}>{weather.condition.toUpperCase()}</Text>
           <View style={styles.weatherRow}>
             <View style={styles.weatherStat}>
-              <Text style={styles.weatherStatVal}>{weather.main.feels_like}°</Text>
-              <Text style={styles.weatherStatLabel}>Feels Like</Text>
-            </View>
-            <View style={styles.weatherDivider} />
-            <View style={styles.weatherStat}>
-              <Text style={styles.weatherStatVal}>{weather.main.humidity}%</Text>
+              <Text style={styles.weatherStatVal}>{weather.humidity}%</Text>
               <Text style={styles.weatherStatLabel}>Humidity</Text>
             </View>
             <View style={styles.weatherDivider} />
             <View style={styles.weatherStat}>
-              <Text style={styles.weatherStatVal}>{weather.wind?.speed} m/s</Text>
-              <Text style={styles.weatherStatLabel}>Wind</Text>
+              <Text style={styles.weatherStatVal}>{weather.isDay ? '☀️ Day' : '🌙 Night'}</Text>
+              <Text style={styles.weatherStatLabel}>Period</Text>
             </View>
           </View>
         </View>
       )}
 
-      {/* Location + Sun Row */}
-      <View style={styles.row}>
-        {location && (
-          <View style={[styles.card, styles.halfCard]}>
-            <Text style={styles.cardIcon}>📍</Text>
-            <Text style={styles.cardTitle}>Location</Text>
-            <Text style={styles.cardSmall}>{location.latitude.toFixed(4)}°N</Text>
-            <Text style={styles.cardSmall}>{location.longitude.toFixed(4)}°E</Text>
+      {/* Sun Times */}
+      {sunData && (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>☀️ Sun Times</Text>
+          <View style={styles.sunRow}>
+            <View style={styles.sunItem}>
+              <Text style={styles.sunEmoji}>🌅</Text>
+              <Text style={styles.sunLabel}>Sunrise</Text>
+              <Text style={styles.sunTime}>{formatTime(sunData.sunrise)}</Text>
+            </View>
+            <View style={styles.weatherDivider} />
+            <View style={styles.sunItem}>
+              <Text style={styles.sunEmoji}>🌇</Text>
+              <Text style={styles.sunLabel}>Sunset</Text>
+              <Text style={styles.sunTime}>{formatTime(sunData.sunset)}</Text>
+            </View>
+            <View style={styles.weatherDivider} />
+            <View style={styles.sunItem}>
+              <Text style={styles.sunEmoji}>🌓</Text>
+              <Text style={styles.sunLabel}>Day Length</Text>
+              <Text style={styles.sunTime}>{sunData.day_length}</Text>
+            </View>
           </View>
-        )}
-        {sunData && (
-          <View style={[styles.card, styles.halfCard]}>
-            <Text style={styles.cardIcon}>☀️</Text>
-            <Text style={styles.cardTitle}>Sun Times</Text>
-            <Text style={styles.cardSmall}>↑ {sunData.sunrise}</Text>
-            <Text style={styles.cardSmall}>↓ {sunData.sunset}</Text>
-          </View>
-        )}
-      </View>
+        </View>
+      )}
 
-      {/* Street Lights */}
+      {/* Street Light */}
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>💡 Street Light Status</Text>
-        {STREET_LIGHTS.map((light, index) => (
-          <View
-            key={light.id}
-            style={[styles.lightRow, index === STREET_LIGHTS.length - 1 && { borderBottomWidth: 0 }]}
-          >
-            <View style={styles.lightLeft}>
-              <View style={[
-                styles.lightDot,
-                { backgroundColor: lightStatuses[light.id] === 'ON' ? '#4CD964' : '#555' }
-              ]} />
-              <Text style={styles.lightName}>{light.name}</Text>
-            </View>
+        <View style={styles.lightRow}>
+          <View style={styles.lightLeft}>
             <View style={[
-              styles.lightBadge,
-              lightStatuses[light.id] === 'ON' ? styles.badgeOn : styles.badgeOff
-            ]}>
-              <Text style={[
-                styles.lightBadgeText,
-                { color: lightStatuses[light.id] === 'ON' ? '#4CD964' : '#888' }
-              ]}>
-                {lightStatuses[light.id] || '...'}
-              </Text>
-            </View>
+              styles.lightDot,
+              { backgroundColor: lightStatus === 'ON' ? '#4CD964' : '#555' }
+            ]} />
+            <Text style={styles.lightName}>Street Light 1</Text>
           </View>
-        ))}
+          <View style={[
+            styles.lightBadge,
+            lightStatus === 'ON' ? styles.badgeOn : styles.badgeOff
+          ]}>
+            <Text style={[
+              styles.lightBadgeText,
+              { color: lightStatus === 'ON' ? '#4CD964' : '#888' }
+            ]}>
+              {lightStatus || '...'}
+            </Text>
+          </View>
+        </View>
       </View>
 
     </ScrollView>
@@ -216,22 +206,21 @@ const styles = StyleSheet.create({
   weatherStatLabel: { fontSize: 11, color: '#666', marginTop: 2 },
   weatherDivider: { width: 1, height: 30, backgroundColor: '#2A3349' },
 
-  row: { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  halfCard: { flex: 1 },
-
   card: {
     backgroundColor: '#1C2333', borderRadius: 16, padding: 16,
     marginBottom: 16, borderWidth: 1, borderColor: '#2A3349',
   },
-  cardIcon: { fontSize: 22, marginBottom: 6 },
-  cardTitle: { fontSize: 12, color: '#666', fontWeight: '600', letterSpacing: 1, marginBottom: 6, textTransform: 'uppercase' },
-  cardSmall: { fontSize: 13, color: '#CCC', marginBottom: 2 },
-
   sectionTitle: { fontSize: 15, fontWeight: '700', color: '#FFFFFF', marginBottom: 12 },
+
+  sunRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
+  sunItem: { alignItems: 'center', flex: 1 },
+  sunEmoji: { fontSize: 22, marginBottom: 4 },
+  sunLabel: { fontSize: 11, color: '#666', fontWeight: '600', letterSpacing: 1, marginBottom: 4 },
+  sunTime: { fontSize: 13, color: '#FFFFFF', fontWeight: '700' },
 
   lightRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#2A3349',
+    paddingVertical: 8,
   },
   lightLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   lightDot: { width: 8, height: 8, borderRadius: 4 },

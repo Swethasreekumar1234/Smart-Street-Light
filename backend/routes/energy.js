@@ -1,365 +1,246 @@
-const express = require('express');
-const { getDB } = require('../db');
-const router = express.Router();
+import React, { useState, useEffect } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView,
+  TouchableOpacity, Dimensions, StatusBar, ActivityIndicator
+} from 'react-native';
+import { BarChart, LineChart } from 'react-native-chart-kit';
+import axios from 'axios';
+import { API_URL } from '../config';
 
-router.get('/summary', async (req, res) => {
-  try {
-    const { days = 7 } = req.query;
+const screenWidth = Dimensions.get('window').width - 48;
 
-    // Parse and validate days parameter
-    const daysNum = parseInt(days);
-    if (isNaN(daysNum) || daysNum < 1 || daysNum > 365) {
-      return res.status(400).json({
-        error: 'Invalid days parameter',
-        message: 'Days must be a number between 1 and 365'
-      });
-    }
+const chartConfig = {
+  backgroundGradientFrom: '#1C2333',
+  backgroundGradientTo: '#1C2333',
+  decimalPlaces: 1,
+  color: (opacity = 1) => `rgba(245, 166, 35, ${opacity})`,
+  labelColor: (opacity = 1) => `rgba(150, 150, 150, ${opacity})`,
+  propsForBackgroundLines: { stroke: '#2A3349' },
+  propsForDots: { r: '5', strokeWidth: '2', stroke: '#F5A623' },
+};
 
-    // Calculate the start date for the query
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - daysNum);
+const fallbackWeekly = {
+  labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+  datasets: [{ data: [4.2, 3.8, 5.1, 4.7, 6.3, 7.0, 5.5] }],
+};
 
-    const db = getDB();
+const fallbackMonthly = {
+  labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+  datasets: [{ data: [120, 98, 135, 110, 142, 128] }],
+};
 
-    // Fetch light logs for the specified period
-    const logs = await db.collection('lightLogs').find({
-      timestamp: { $gte: startDate }
-    }).toArray();
+export default function EnergyScreen() {
+  const [view, setView] = useState('weekly');
+  const [weeklyData, setWeeklyData] = useState(fallbackWeekly);
+  const [monthlyData, setMonthlyData] = useState(fallbackMonthly);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-    // Calculate statistics
-    const totalChecks = logs.length;
-    const onCount = logs.filter(log => log.lightOn === true).length;
-    
-    // Calculate percentages
-    const lightsOnPct = totalChecks > 0 ? ((onCount / totalChecks) * 100).toFixed(1) : '0.0';
-    const savingsPct = totalChecks > 0 ? (100 - parseFloat(lightsOnPct)).toFixed(1) : '0.0';
+  useEffect(() => {
+    fetchEnergyData();
+  }, []);
 
-    // Calculate energy usage (assuming 20W per LED and one log per minute)
-    const hoursOn = onCount / 60; // Convert minutes to hours
-    const kwhUsed = (20 * hoursOn) / 1000; // Convert watt-hours to kWh
-    const kwhSaved = ((totalChecks - onCount) / 60 * 20) / 1000; // Energy saved by being off
+  const fetchEnergyData = async () => {
+    setLoading(true);
+    try {
+      const [summaryRes, weeklyRes, monthlyRes] = await Promise.all([
+        axios.get(`${API_URL}/api/energy/summary`, { params: { days: 7 }, timeout: 5000 }),
+        axios.get(`${API_URL}/api/energy/daily`, { params: { days: 7 }, timeout: 5000 }),
+        axios.get(`${API_URL}/api/energy/daily`, { params: { days: 30 }, timeout: 5000 }),
+      ]);
 
-    res.json({
-      period: `${daysNum} days`,
-      totalChecks: totalChecks,
-      lightsOnPct: `${lightsOnPct}%`,
-      estimatedKwh: Math.round(kwhUsed * 100) / 100, // Round to 2 decimal places
-      savedKwh: Math.round(kwhSaved * 100) / 100, // Round to 2 decimal places
-      savingsPct: `${savingsPct}%`
-    });
+      // Set summary stats
+      setSummary(summaryRes.data);
 
-  } catch (error) {
-    console.error('Error calculating energy summary:', error);
-    res.status(500).json({
-      error: 'Failed to calculate energy summary',
-      details: error.message
-    });
-  }
-});
-
-router.get('/logs', async (req, res) => {
-  try {
-    const { limit = 50, lightId } = req.query;
-
-    // Parse and validate limit parameter
-    const limitNum = parseInt(limit);
-    if (isNaN(limitNum) || limitNum < 1 || limitNum > 1000) {
-      return res.status(400).json({
-        error: 'Invalid limit parameter',
-        message: 'Limit must be a number between 1 and 1000'
-      });
-    }
-
-    const db = getDB();
-
-    // Build query
-    const query = {};
-    if (lightId) {
-      query.lightId = lightId;
-    }
-
-    // Fetch most recent light logs
-    const logs = await db.collection('lightLogs')
-      .find(query)
-      .sort({ timestamp: -1 })
-      .limit(limitNum)
-      .toArray();
-
-    res.json(logs);
-
-  } catch (error) {
-    console.error('Error fetching energy logs:', error);
-    res.status(500).json({
-      error: 'Failed to fetch energy logs',
-      details: error.message
-    });
-  }
-});
-
-router.get('/daily', async (req, res) => {
-  try {
-    const { days = 7 } = req.query;
-
-    // Parse and validate days parameter
-    const daysNum = parseInt(days);
-    if (isNaN(daysNum) || daysNum < 1 || daysNum > 30) {
-      return res.status(400).json({
-        error: 'Invalid days parameter',
-        message: 'Days must be a number between 1 and 30'
-      });
-    }
-
-    // Calculate the start date
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - daysNum);
-
-    const db = getDB();
-
-    // Aggregate daily statistics
-    const dailyStats = await db.collection('lightLogs').aggregate([
-      {
-        $match: {
-          timestamp: { $gte: startDate }
-        }
-      },
-      {
-        $group: {
-          _id: {
-            $dateToString: {
-              format: "%Y-%m-%d",
-              date: "$timestamp"
-            }
-          },
-          totalChecks: { $sum: 1 },
-          onCount: {
-            $sum: {
-              $cond: [{ $eq: ["$lightOn", true] }, 1, 0]
-            }
-          },
-          avgLdr: { $avg: "$ldr" },
-          motionCount: {
-            $sum: {
-              $cond: [{ $eq: ["$motion", true] }, 1, 0]
-            }
-          }
-        }
-      },
-      {
-        $project: {
-          date: "$_id",
-          totalChecks: 1,
-          onCount: 1,
-          lightsOnPct: {
-            $round: [
-              {
-                $multiply: [
-                  { $divide: ["$onCount", "$totalChecks"] },
-                  100
-                ]
-              },
-              1
-            ]
-          },
-          avgLdr: { $round: ["$avgLdr", 0] },
-          motionCount: 1,
-          kwhUsed: {
-            $round: [
-              {
-                $divide: [
-                  { $multiply: [20, { $divide: ["$onCount", 60] }] },
-                  1000
-                ]
-              },
-              3
-            ]
-          }
-        }
-      },
-      {
-        $sort: { date: 1 }
+      // Process weekly chart data
+      if (weeklyRes.data?.data?.length > 0) {
+        const daily = weeklyRes.data.data;
+        setWeeklyData({
+          labels: daily.map(d => {
+            const date = new Date(d.date);
+            return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
+          }),
+          datasets: [{ data: daily.map(d => d.kwhUsed || 0) }],
+        });
       }
-    ]).toArray();
 
-    res.json({
-      period: `${daysNum} days`,
-      data: dailyStats
-    });
-
-  } catch (error) {
-    console.error('Error calculating daily energy stats:', error);
-    res.status(500).json({
-      error: 'Failed to calculate daily energy statistics',
-      details: error.message
-    });
-  }
-});
-
-router.get('/hourly', async (req, res) => {
-  try {
-    const { days = 1 } = req.query;
-
-    // Parse and validate days parameter
-    const daysNum = parseInt(days);
-    if (isNaN(daysNum) || daysNum < 1 || daysNum > 7) {
-      return res.status(400).json({
-        error: 'Invalid days parameter',
-        message: 'Days must be a number between 1 and 7'
-      });
-    }
-
-    // Calculate the start date
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - daysNum);
-
-    const db = getDB();
-
-    // Aggregate hourly statistics
-    const hourlyStats = await db.collection('lightLogs').aggregate([
-      {
-        $match: {
-          timestamp: { $gte: startDate }
-        }
-      },
-      {
-        $group: {
-          _id: {
-            hour: { $hour: "$timestamp" },
-            date: {
-              $dateToString: {
-                format: "%Y-%m-%d",
-                date: "$timestamp"
-              }
-            }
-          },
-          totalChecks: { $sum: 1 },
-          onCount: {
-            $sum: {
-              $cond: [{ $eq: ["$lightOn", true] }, 1, 0]
-            }
-          }
-        }
-      },
-      {
-        $project: {
-          hour: "$_id.hour",
-          date: "$_id.date",
-          totalChecks: 1,
-          onCount: 1,
-          lightsOnPct: {
-            $round: [
-              {
-                $multiply: [
-                  { $divide: ["$onCount", "$totalChecks"] },
-                  100
-                ]
-              },
-              1
-            ]
-          }
-        }
-      },
-      {
-        $sort: { date: 1, hour: 1 }
+      // Process monthly chart data — group by week
+      if (monthlyRes.data?.data?.length > 0) {
+        const daily = monthlyRes.data.data;
+        // Group into weeks
+        const weeks = {};
+        daily.forEach(d => {
+          const date = new Date(d.date);
+          const weekNum = Math.floor(date.getDate() / 7);
+          const key = `W${weekNum + 1}`;
+          if (!weeks[key]) weeks[key] = 0;
+          weeks[key] += d.kwhUsed || 0;
+        });
+        setMonthlyData({
+          labels: Object.keys(weeks),
+          datasets: [{ data: Object.values(weeks).map(v => Math.round(v * 100) / 100) }],
+        });
       }
-    ]).toArray();
 
-    res.json({
-      period: `${daysNum} days`,
-      data: hourlyStats
-    });
-
-  } catch (error) {
-    console.error('Error calculating hourly energy stats:', error);
-    res.status(500).json({
-      error: 'Failed to calculate hourly energy statistics',
-      details: error.message
-    });
-  }
-});
-
-router.get('/comparison', async (req, res) => {
-  try {
-    const { period1 = 7, period2 = 7 } = req.query;
-
-    // Parse and validate periods
-    const period1Num = parseInt(period1);
-    const period2Num = parseInt(period2);
-
-    if (isNaN(period1Num) || isNaN(period2Num) || 
-        period1Num < 1 || period1Num > 30 ||
-        period2Num < 1 || period2Num > 30) {
-      return res.status(400).json({
-        error: 'Invalid period parameters',
-        message: 'Periods must be numbers between 1 and 30'
-      });
+    } catch (error) {
+      console.log('Energy fetch failed, using fallback data:', error.message);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    const db = getDB();
+  const currentData = view === 'weekly' ? weeklyData : monthlyData;
+  const values = currentData.datasets[0].data;
+  const total = values.reduce((a, b) => a + b, 0);
+  const peak = Math.max(...values);
+  const peakLabel = currentData.labels[values.indexOf(peak)];
 
-    // Calculate dates for both periods
-    const now = new Date();
-    const period1Start = new Date(now);
-    period1Start.setDate(period1Start.getDate() - period1Num);
-    
-    const period1End = new Date(period1Start);
-    period1End.setDate(period1End.getDate() - 1);
-    
-    const period2Start = new Date(period1End);
-    period2Start.setDate(period2Start.getDate() - period2Num);
+  return (
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
+      <StatusBar barStyle="light-content" />
 
-    // Get stats for both periods
-    const getPeriodStats = async (startDate, endDate) => {
-      const logs = await db.collection('lightLogs').find({
-        timestamp: { 
-          $gte: startDate,
-          $lt: endDate
-        }
-      }).toArray();
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerEmoji}>⚡</Text>
+        <Text style={styles.headerTitle}>Energy Usage</Text>
+        <Text style={styles.headerSub}>Smart Street Light Network</Text>
+      </View>
 
-      const totalChecks = logs.length;
-      const onCount = logs.filter(log => log.lightOn === true).length;
-      const lightsOnPct = totalChecks > 0 ? ((onCount / totalChecks) * 100).toFixed(1) : '0.0';
-      const hoursOn = onCount / 60;
-      const kwhUsed = (20 * hoursOn) / 1000;
+      {loading ? (
+        <View style={styles.loadingCard}>
+          <ActivityIndicator color="#F5A623" />
+          <Text style={styles.loadingText}>Loading energy data...</Text>
+        </View>
+      ) : (
+        <>
+          {/* Stats Row */}
+          <View style={styles.statsRow}>
+            <View style={styles.statCard}>
+              <Text style={styles.statVal}>
+                {summary ? summary.estimatedKwh : total.toFixed(1)}
+              </Text>
+              <Text style={styles.statUnit}>kWh</Text>
+              <Text style={styles.statLabel}>This Week</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statVal}>
+                {summary ? summary.savedKwh : '—'}
+              </Text>
+              <Text style={styles.statUnit}>kWh</Text>
+              <Text style={styles.statLabel}>Saved</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={[styles.statVal, { color: '#FF453A' }]}>{peak.toFixed(1)}</Text>
+              <Text style={styles.statUnit}>kWh</Text>
+              <Text style={styles.statLabel}>Peak ({peakLabel})</Text>
+            </View>
+          </View>
 
-      return {
-        totalChecks,
-        onCount,
-        lightsOnPct: `${lightsOnPct}%`,
-        kwhUsed: Math.round(kwhUsed * 100) / 100
-      };
-    };
+          {/* Savings Badge */}
+          {summary && (
+            <View style={styles.savingsBadge}>
+              <Text style={styles.savingsText}>
+                🌱 {summary.savingsPct} energy saved — lights on {summary.lightsOnPct} of the time
+              </Text>
+            </View>
+          )}
+        </>
+      )}
 
-    const [period1Stats, period2Stats] = await Promise.all([
-      getPeriodStats(period1Start, now),
-      getPeriodStats(period2Start, period1End)
-    ]);
+      {/* Toggle */}
+      <View style={styles.toggle}>
+        {['weekly', 'monthly'].map((v) => (
+          <TouchableOpacity
+            key={v}
+            style={[styles.toggleBtn, view === v && styles.activeBtn]}
+            onPress={() => setView(v)}
+          >
+            <Text style={[styles.toggleText, view === v && styles.activeText]}>
+              {v.charAt(0).toUpperCase() + v.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
-    // Calculate improvement
-    const improvement = {
-      usageChange: Math.round((parseFloat(period1Stats.lightsOnPct) - parseFloat(period2Stats.lightsOnPct)) * 10) / 10,
-      energyChange: Math.round((period1Stats.kwhUsed - period2Stats.kwhUsed) * 100) / 100
-    };
+      {/* Chart */}
+      <View style={styles.chartCard}>
+        <Text style={styles.chartTitle}>
+          {view === 'weekly' ? 'Daily kWh — This Week' : 'Weekly kWh — This Month'}
+        </Text>
+        {view === 'weekly' ? (
+          <BarChart
+            data={weeklyData}
+            width={screenWidth}
+            height={200}
+            chartConfig={chartConfig}
+            style={styles.chart}
+            showValuesOnTopOfBars
+            withInnerLines
+            fromZero
+          />
+        ) : (
+          <LineChart
+            data={monthlyData}
+            width={screenWidth}
+            height={200}
+            chartConfig={chartConfig}
+            style={styles.chart}
+            bezier
+            withInnerLines
+            fromZero
+          />
+        )}
+      </View>
 
-    res.json({
-      period1: {
-        label: `Last ${period1Num} days`,
-        ...period1Stats
-      },
-      period2: {
-        label: `Previous ${period2Num} days`,
-        ...period2Stats
-      },
-      improvement
-    });
+    </ScrollView>
+  );
+}
 
-  } catch (error) {
-    console.error('Error calculating energy comparison:', error);
-    res.status(500).json({
-      error: 'Failed to calculate energy comparison',
-      details: error.message
-    });
-  }
+const styles = StyleSheet.create({
+  scrollView: { flex: 1, backgroundColor: '#0D1117' },
+  container: { padding: 16, paddingBottom: 30 },
+
+  header: { alignItems: 'center', paddingVertical: 24 },
+  headerEmoji: { fontSize: 40, marginBottom: 8 },
+  headerTitle: { fontSize: 26, fontWeight: '800', color: '#FFFFFF', letterSpacing: 1 },
+  headerSub: { fontSize: 13, color: '#F5A623', marginTop: 4, fontWeight: '500' },
+
+  loadingCard: {
+    backgroundColor: '#1C2333', borderRadius: 16, padding: 24,
+    alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: '#2A3349',
+    flexDirection: 'row', gap: 12, justifyContent: 'center',
+  },
+  loadingText: { color: '#888', fontSize: 14 },
+
+  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  statCard: {
+    flex: 1, backgroundColor: '#1C2333', borderRadius: 16,
+    padding: 14, alignItems: 'center', borderWidth: 1, borderColor: '#2A3349',
+  },
+  statVal: { fontSize: 24, fontWeight: '800', color: '#F5A623' },
+  statUnit: { fontSize: 11, color: '#666', fontWeight: '600' },
+  statLabel: { fontSize: 11, color: '#888', marginTop: 2, textAlign: 'center' },
+
+  savingsBadge: {
+    backgroundColor: '#0D2B1A', borderRadius: 12, padding: 12,
+    marginBottom: 16, borderWidth: 1, borderColor: '#1A4D2E',
+  },
+  savingsText: { color: '#4CD964', fontSize: 13, fontWeight: '600', textAlign: 'center' },
+
+  toggle: {
+    flexDirection: 'row', backgroundColor: '#1C2333',
+    borderRadius: 12, padding: 4, marginBottom: 16,
+    borderWidth: 1, borderColor: '#2A3349',
+  },
+  toggleBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  activeBtn: { backgroundColor: '#F5A623' },
+  toggleText: { color: '#666', fontWeight: '600', fontSize: 14 },
+  activeText: { color: '#0D1117' },
+
+  chartCard: {
+    backgroundColor: '#1C2333', borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: '#2A3349',
+  },
+  chartTitle: { fontSize: 13, color: '#888', fontWeight: '600', marginBottom: 12, letterSpacing: 0.5 },
+  chart: { borderRadius: 12, marginLeft: -10 },
 });
-
-module.exports = router;

@@ -1,21 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Dimensions, StatusBar
+  TouchableOpacity, Dimensions, StatusBar, ActivityIndicator
 } from 'react-native';
 import { BarChart, LineChart } from 'react-native-chart-kit';
+import axios from 'axios';
+import { API_URL } from '../config';
 
 const screenWidth = Dimensions.get('window').width - 48;
-
-const weeklyData = {
-  labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-  datasets: [{ data: [4.2, 3.8, 5.1, 4.7, 6.3, 7.0, 5.5] }],
-};
-
-const monthlyData = {
-  labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-  datasets: [{ data: [120, 98, 135, 110, 142, 128] }],
-};
 
 const chartConfig = {
   backgroundGradientFrom: '#1C2333',
@@ -27,12 +19,68 @@ const chartConfig = {
   propsForDots: { r: '5', strokeWidth: '2', stroke: '#F5A623' },
 };
 
-const total = weeklyData.datasets[0].data.reduce((a, b) => a + b, 0);
-const peak = Math.max(...weeklyData.datasets[0].data);
-const peakDay = weeklyData.labels[weeklyData.datasets[0].data.indexOf(peak)];
+// Fallback data in case backend isn't reachable
+const fallbackWeekly = {
+  labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+  datasets: [{ data: [4.2, 3.8, 5.1, 4.7, 6.3, 7.0, 5.5] }],
+};
+
+const fallbackMonthly = {
+  labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+  datasets: [{ data: [120, 98, 135, 110, 142, 128] }],
+};
 
 export default function EnergyScreen() {
   const [view, setView] = useState('weekly');
+  const [weeklyData, setWeeklyData] = useState(fallbackWeekly);
+  const [monthlyData, setMonthlyData] = useState(fallbackMonthly);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchEnergyData();
+  }, []);
+
+  const fetchEnergyData = async () => {
+    setLoading(true);
+    try {
+      const [weeklyRes, monthlyRes] = await Promise.all([
+        axios.get(`${API_URL}/api/energy/summary`, { params: { days: 7 }, timeout: 5000 }),
+        axios.get(`${API_URL}/api/energy/summary`, { params: { days: 180 }, timeout: 5000 }),
+      ]);
+
+      // Process weekly data
+      if (weeklyRes.data?.daily) {
+        const daily = weeklyRes.data.daily;
+        setWeeklyData({
+          labels: daily.map(d => d.label),
+          datasets: [{ data: daily.map(d => d.kwh || 0) }],
+        });
+      }
+
+      // Process monthly data
+      if (monthlyRes.data?.monthly) {
+        const monthly = monthlyRes.data.monthly;
+        setMonthlyData({
+          labels: monthly.map(m => m.label),
+          datasets: [{ data: monthly.map(m => m.kwh || 0) }],
+        });
+      }
+
+      setSummary(weeklyRes.data);
+    } catch (error) {
+      console.log('Energy fetch failed, using fallback data:', error.message);
+      // Keep fallback data, no alert needed
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const currentData = view === 'weekly' ? weeklyData : monthlyData;
+  const values = currentData.datasets[0].data;
+  const total = values.reduce((a, b) => a + b, 0);
+  const peak = Math.max(...values);
+  const peakLabel = currentData.labels[values.indexOf(peak)];
 
   return (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
@@ -46,23 +94,30 @@ export default function EnergyScreen() {
       </View>
 
       {/* Stats Row */}
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Text style={styles.statVal}>{total.toFixed(1)}</Text>
-          <Text style={styles.statUnit}>kWh</Text>
-          <Text style={styles.statLabel}>This Week</Text>
+      {loading ? (
+        <View style={styles.loadingCard}>
+          <ActivityIndicator color="#F5A623" />
+          <Text style={styles.loadingText}>Loading energy data...</Text>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statVal}>{(total / 7).toFixed(1)}</Text>
-          <Text style={styles.statUnit}>kWh</Text>
-          <Text style={styles.statLabel}>Daily Avg</Text>
+      ) : (
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statVal}>{total.toFixed(1)}</Text>
+            <Text style={styles.statUnit}>kWh</Text>
+            <Text style={styles.statLabel}>{view === 'weekly' ? 'This Week' : 'This Period'}</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statVal}>{(total / values.length).toFixed(1)}</Text>
+            <Text style={styles.statUnit}>kWh</Text>
+            <Text style={styles.statLabel}>Daily Avg</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={[styles.statVal, { color: '#FF453A' }]}>{peak.toFixed(1)}</Text>
+            <Text style={styles.statUnit}>kWh</Text>
+            <Text style={styles.statLabel}>Peak ({peakLabel})</Text>
+          </View>
         </View>
-        <View style={styles.statCard}>
-          <Text style={[styles.statVal, { color: '#FF453A' }]}>{peak}</Text>
-          <Text style={styles.statUnit}>kWh</Text>
-          <Text style={styles.statLabel}>Peak ({peakDay})</Text>
-        </View>
-      </View>
+      )}
 
       {/* Toggle */}
       <View style={styles.toggle}>
@@ -121,6 +176,13 @@ const styles = StyleSheet.create({
   headerEmoji: { fontSize: 40, marginBottom: 8 },
   headerTitle: { fontSize: 26, fontWeight: '800', color: '#FFFFFF', letterSpacing: 1 },
   headerSub: { fontSize: 13, color: '#F5A623', marginTop: 4, fontWeight: '500' },
+
+  loadingCard: {
+    backgroundColor: '#1C2333', borderRadius: 16, padding: 24,
+    alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: '#2A3349',
+    flexDirection: 'row', gap: 12, justifyContent: 'center',
+  },
+  loadingText: { color: '#888', fontSize: 14 },
 
   statsRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   statCard: {

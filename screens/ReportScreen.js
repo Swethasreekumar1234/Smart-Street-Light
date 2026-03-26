@@ -6,8 +6,9 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
+import { API_URL } from '../config';
 
-export default function ReportScreen({ currentLocation, onCache }) {
+export default function ReportScreen({ currentLocation }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [image, setImage] = useState(null);
@@ -20,7 +21,7 @@ export default function ReportScreen({ currentLocation, onCache }) {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ImagePicker.MediaType.Images,
       allowsEditing: true,
       quality: 0.7,
     });
@@ -32,25 +33,32 @@ export default function ReportScreen({ currentLocation, onCache }) {
       Alert.alert('Missing Title', 'Please enter a report title.');
       return;
     }
+    if (!currentLocation) {
+      Alert.alert('Location needed', 'Waiting for your location...');
+      return;
+    }
     setSubmitting(true);
     try {
-      const formData = new FormData();
-      formData.append('title', title);
-      formData.append('description', description);
-      formData.append('latitude', currentLocation?.latitude ?? 'unknown');
-      formData.append('longitude', currentLocation?.longitude ?? 'unknown');
-      if (image) {
-        formData.append('photo', { uri: image.uri, type: 'image/jpeg', name: 'report.jpg' });
-      }
-      const reportData = { title, description, location: currentLocation, timestamp: new Date().toISOString() };
-      await onCache('latest_report', reportData);
-      await axios.post('https://your-backend.com/reports', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }, timeout: 5000,
+      const reportData = {
+        lat: currentLocation.latitude,
+        lon: currentLocation.longitude,
+        issueType: 'other',
+        description: `${title}${description ? ' - ' + description : ''}`,
+        userId: null
+      };
+
+      await axios.post(`${API_URL}/api/reports`, reportData, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 5000,
       });
+
       Alert.alert('✅ Submitted', 'Report sent successfully!');
-      setTitle(''); setDescription(''); setImage(null);
-    } catch {
-      Alert.alert('📦 Saved Offline', 'Cached locally. Will sync when online.');
+      setTitle('');
+      setDescription('');
+      setImage(null);
+    } catch (error) {
+      console.log(error);
+      Alert.alert('❌ Failed', 'Could not submit report. Please try again.');
     } finally {
       setSubmitting(false);
     }

@@ -1,0 +1,1 @@
+export const API_URL = 'https://nonascendent-alexzander-lazier.ngrok-free.dev';
