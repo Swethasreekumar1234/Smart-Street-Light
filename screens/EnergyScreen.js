@@ -1,30 +1,70 @@
-// screens/EnergyScreen.js
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { VictoryBar, VictoryChart, VictoryTheme, VictoryLine, VictoryAxis } from 'victory-native';
+import {
+  View, Text, StyleSheet, ScrollView,
+  TouchableOpacity, Dimensions, StatusBar
+} from 'react-native';
+import { BarChart, LineChart } from 'react-native-chart-kit';
 
-const weeklyData = [
-  { day: 'Mon', kwh: 4.2 }, { day: 'Tue', kwh: 3.8 },
-  { day: 'Wed', kwh: 5.1 }, { day: 'Thu', kwh: 4.7 },
-  { day: 'Fri', kwh: 6.3 }, { day: 'Sat', kwh: 7.0 },
-  { day: 'Sun', kwh: 5.5 },
-];
+const screenWidth = Dimensions.get('window').width - 48;
 
-const monthlyData = [
-  { x: 1, y: 120 }, { x: 2, y: 98 }, { x: 3, y: 135 },
-  { x: 4, y: 110 }, { x: 5, y: 142 }, { x: 6, y: 128 },
-];
+const weeklyData = {
+  labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+  datasets: [{ data: [4.2, 3.8, 5.1, 4.7, 6.3, 7.0, 5.5] }],
+};
+
+const monthlyData = {
+  labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+  datasets: [{ data: [120, 98, 135, 110, 142, 128] }],
+};
+
+const chartConfig = {
+  backgroundGradientFrom: '#1C2333',
+  backgroundGradientTo: '#1C2333',
+  decimalPlaces: 1,
+  color: (opacity = 1) => `rgba(245, 166, 35, ${opacity})`,
+  labelColor: (opacity = 1) => `rgba(150, 150, 150, ${opacity})`,
+  propsForBackgroundLines: { stroke: '#2A3349' },
+  propsForDots: { r: '5', strokeWidth: '2', stroke: '#F5A623' },
+};
+
+const total = weeklyData.datasets[0].data.reduce((a, b) => a + b, 0);
+const peak = Math.max(...weeklyData.datasets[0].data);
+const peakDay = weeklyData.labels[weeklyData.datasets[0].data.indexOf(peak)];
 
 export default function EnergyScreen() {
-  const [view, setView] = useState('weekly'); // 'weekly' | 'monthly'
-
-  const total = weeklyData.reduce((sum, d) => sum + d.kwh, 0).toFixed(1);
+  const [view, setView] = useState('weekly');
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>⚡ Energy Usage</Text>
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
+      <StatusBar barStyle="light-content" />
 
-      {/* Toggle buttons */}
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerEmoji}>⚡</Text>
+        <Text style={styles.headerTitle}>Energy Usage</Text>
+        <Text style={styles.headerSub}>Smart Street Light Network</Text>
+      </View>
+
+      {/* Stats Row */}
+      <View style={styles.statsRow}>
+        <View style={styles.statCard}>
+          <Text style={styles.statVal}>{total.toFixed(1)}</Text>
+          <Text style={styles.statUnit}>kWh</Text>
+          <Text style={styles.statLabel}>This Week</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statVal}>{(total / 7).toFixed(1)}</Text>
+          <Text style={styles.statUnit}>kWh</Text>
+          <Text style={styles.statLabel}>Daily Avg</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={[styles.statVal, { color: '#FF453A' }]}>{peak}</Text>
+          <Text style={styles.statUnit}>kWh</Text>
+          <Text style={styles.statLabel}>Peak ({peakDay})</Text>
+        </View>
+      </View>
+
+      {/* Toggle */}
       <View style={styles.toggle}>
         {['weekly', 'monthly'].map((v) => (
           <TouchableOpacity
@@ -40,59 +80,71 @@ export default function EnergyScreen() {
       </View>
 
       {/* Chart */}
-      <View style={styles.card}>
+      <View style={styles.chartCard}>
+        <Text style={styles.chartTitle}>
+          {view === 'weekly' ? 'Daily kWh — This Week' : 'Monthly kWh — Last 6 Months'}
+        </Text>
         {view === 'weekly' ? (
-          <>
-            <Text style={styles.chartTitle}>Daily kWh — This Week</Text>
-            <VictoryChart theme={VictoryTheme.material} domainPadding={20}>
-              <VictoryAxis tickValues={weeklyData.map(d => d.day)} />
-              <VictoryAxis dependentAxis />
-              <VictoryBar
-                data={weeklyData}
-                x="day" y="kwh"
-                style={{ data: { fill: '#2196F3', width: 20 } }}
-              />
-            </VictoryChart>
-          </>
+          <BarChart
+            data={weeklyData}
+            width={screenWidth}
+            height={200}
+            chartConfig={chartConfig}
+            style={styles.chart}
+            showValuesOnTopOfBars
+            withInnerLines
+            fromZero
+          />
         ) : (
-          <>
-            <Text style={styles.chartTitle}>Monthly kWh — Last 6 Months</Text>
-            <VictoryChart theme={VictoryTheme.material}>
-              <VictoryLine
-                data={monthlyData}
-                style={{ data: { stroke: '#4CAF50', strokeWidth: 3 } }}
-              />
-            </VictoryChart>
-          </>
+          <LineChart
+            data={monthlyData}
+            width={screenWidth}
+            height={200}
+            chartConfig={chartConfig}
+            style={styles.chart}
+            bezier
+            withInnerLines
+            fromZero
+          />
         )}
       </View>
 
-      {/* Summary */}
-      <View style={styles.card}>
-        <Text style={styles.label}>📊 Weekly Summary</Text>
-        <Text>Total: {total} kWh</Text>
-        <Text>Daily Average: {(total / 7).toFixed(2)} kWh</Text>
-        <Text>Peak Day: Friday (6.3 kWh)</Text>
-      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, backgroundColor: '#f5f5f5' },
-  title: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', marginBottom: 15 },
-  toggle: { flexDirection: 'row', justifyContent: 'center', marginBottom: 15, gap: 10 },
-  toggleBtn: {
-    paddingHorizontal: 20, paddingVertical: 8,
-    borderRadius: 20, borderWidth: 1, borderColor: '#2196F3',
+  scrollView: { flex: 1, backgroundColor: '#0D1117' },
+  container: { padding: 16, paddingBottom: 30 },
+
+  header: { alignItems: 'center', paddingVertical: 24 },
+  headerEmoji: { fontSize: 40, marginBottom: 8 },
+  headerTitle: { fontSize: 26, fontWeight: '800', color: '#FFFFFF', letterSpacing: 1 },
+  headerSub: { fontSize: 13, color: '#F5A623', marginTop: 4, fontWeight: '500' },
+
+  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  statCard: {
+    flex: 1, backgroundColor: '#1C2333', borderRadius: 16,
+    padding: 14, alignItems: 'center', borderWidth: 1, borderColor: '#2A3349',
   },
-  activeBtn: { backgroundColor: '#2196F3' },
-  toggleText: { color: '#2196F3', fontWeight: '600' },
-  activeText: { color: 'white' },
-  card: {
-    backgroundColor: 'white', padding: 15, marginBottom: 12,
-    borderRadius: 10, elevation: 2,
+  statVal: { fontSize: 24, fontWeight: '800', color: '#F5A623' },
+  statUnit: { fontSize: 11, color: '#666', fontWeight: '600' },
+  statLabel: { fontSize: 11, color: '#888', marginTop: 2, textAlign: 'center' },
+
+  toggle: {
+    flexDirection: 'row', backgroundColor: '#1C2333',
+    borderRadius: 12, padding: 4, marginBottom: 16,
+    borderWidth: 1, borderColor: '#2A3349',
   },
-  chartTitle: { fontWeight: 'bold', fontSize: 15, marginBottom: 5, color: '#333' },
-  label: { fontWeight: 'bold', fontSize: 16, marginBottom: 6, color: '#2196F3' },
+  toggleBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  activeBtn: { backgroundColor: '#F5A623' },
+  toggleText: { color: '#666', fontWeight: '600', fontSize: 14 },
+  activeText: { color: '#0D1117' },
+
+  chartCard: {
+    backgroundColor: '#1C2333', borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: '#2A3349',
+  },
+  chartTitle: { fontSize: 13, color: '#888', fontWeight: '600', marginBottom: 12, letterSpacing: 0.5 },
+  chart: { borderRadius: 12, marginLeft: -10 },
 });

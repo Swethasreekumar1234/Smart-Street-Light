@@ -1,8 +1,8 @@
-// screens/ReportScreen.js
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Image, Alert, ScrollView, ActivityIndicator
+  StyleSheet, Image, Alert, ScrollView,
+  ActivityIndicator, StatusBar
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
@@ -29,10 +29,9 @@ export default function ReportScreen({ currentLocation, onCache }) {
 
   const submitReport = async () => {
     if (!title.trim()) {
-      Alert.alert('Validation', 'Please enter a report title.');
+      Alert.alert('Missing Title', 'Please enter a report title.');
       return;
     }
-
     setSubmitting(true);
     try {
       const formData = new FormData();
@@ -40,94 +39,120 @@ export default function ReportScreen({ currentLocation, onCache }) {
       formData.append('description', description);
       formData.append('latitude', currentLocation?.latitude ?? 'unknown');
       formData.append('longitude', currentLocation?.longitude ?? 'unknown');
-
       if (image) {
-        formData.append('photo', {
-          uri: image.uri,
-          type: 'image/jpeg',
-          name: 'report.jpg',
-        });
+        formData.append('photo', { uri: image.uri, type: 'image/jpeg', name: 'report.jpg' });
       }
-
-      // Save locally first (offline support)
       const reportData = { title, description, location: currentLocation, timestamp: new Date().toISOString() };
       await onCache('latest_report', reportData);
-
-      // Try submitting to backend
       await axios.post('https://your-backend.com/reports', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 5000,
+        headers: { 'Content-Type': 'multipart/form-data' }, timeout: 5000,
       });
-
-      Alert.alert('Success', 'Report submitted!');
+      Alert.alert('✅ Submitted', 'Report sent successfully!');
       setTitle(''); setDescription(''); setImage(null);
-    } catch (e) {
-      Alert.alert('Saved Offline', 'Report cached locally. Will sync when online.');
+    } catch {
+      Alert.alert('📦 Saved Offline', 'Cached locally. Will sync when online.');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>📋 Submit Report</Text>
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
+      <StatusBar barStyle="light-content" />
 
-      {currentLocation && (
-        <Text style={styles.locationText}>
-          📍 {currentLocation.latitude.toFixed(4)}, {currentLocation.longitude.toFixed(4)}
-        </Text>
-      )}
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerEmoji}>📋</Text>
+        <Text style={styles.headerTitle}>Submit Report</Text>
+        {currentLocation && (
+          <Text style={styles.headerSub}>
+            📍 {currentLocation.latitude.toFixed(4)}, {currentLocation.longitude.toFixed(4)}
+          </Text>
+        )}
+      </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Report Title *"
-        value={title}
-        onChangeText={setTitle}
-      />
-      <TextInput
-        style={[styles.input, styles.multiline]}
-        placeholder="Description"
-        value={description}
-        onChangeText={setDescription}
-        multiline
-        numberOfLines={4}
-      />
+      {/* Form */}
+      <View style={styles.formCard}>
+        <Text style={styles.fieldLabel}>REPORT TITLE *</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. Street Light 3 is flickering"
+          placeholderTextColor="#444"
+          value={title}
+          onChangeText={setTitle}
+        />
 
-      <TouchableOpacity style={styles.imageBtn} onPress={pickImage}>
-        <Text style={styles.imageBtnText}>📷 Attach Photo</Text>
-      </TouchableOpacity>
+        <Text style={styles.fieldLabel}>DESCRIPTION</Text>
+        <TextInput
+          style={[styles.input, styles.multiline]}
+          placeholder="Describe the issue in detail..."
+          placeholderTextColor="#444"
+          value={description}
+          onChangeText={setDescription}
+          multiline
+          numberOfLines={4}
+        />
 
-      {image && (
-        <Image source={{ uri: image.uri }} style={styles.preview} />
-      )}
+        {/* Image Picker */}
+        <TouchableOpacity style={styles.imageBtn} onPress={pickImage}>
+          <Text style={styles.imageBtnText}>📷  Attach Photo</Text>
+        </TouchableOpacity>
 
-      <TouchableOpacity style={styles.submitBtn} onPress={submitReport} disabled={submitting}>
-        {submitting
-          ? <ActivityIndicator color="white" />
-          : <Text style={styles.submitText}>Submit Report</Text>}
-      </TouchableOpacity>
+        {image && (
+          <View style={styles.imagePreviewWrapper}>
+            <Image source={{ uri: image.uri }} style={styles.preview} />
+            <TouchableOpacity style={styles.removeImg} onPress={() => setImage(null)}>
+              <Text style={{ color: '#FF453A', fontWeight: '700' }}>✕ Remove</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Submit */}
+        <TouchableOpacity style={styles.submitBtn} onPress={submitReport} disabled={submitting}>
+          {submitting
+            ? <ActivityIndicator color="#0D1117" />
+            : <Text style={styles.submitText}>Submit Report →</Text>}
+        </TouchableOpacity>
+      </View>
+
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, backgroundColor: '#f5f5f5' },
-  title: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', marginBottom: 10 },
-  locationText: { textAlign: 'center', color: '#666', marginBottom: 15 },
+  scrollView: { flex: 1, backgroundColor: '#0D1117' },
+  container: { padding: 16, paddingBottom: 30 },
+
+  header: { alignItems: 'center', paddingVertical: 24 },
+  headerEmoji: { fontSize: 40, marginBottom: 8 },
+  headerTitle: { fontSize: 26, fontWeight: '800', color: '#FFFFFF', letterSpacing: 1 },
+  headerSub: { fontSize: 12, color: '#F5A623', marginTop: 6, fontWeight: '500' },
+
+  formCard: {
+    backgroundColor: '#1C2333', borderRadius: 20,
+    padding: 20, borderWidth: 1, borderColor: '#2A3349',
+  },
+  fieldLabel: { fontSize: 11, color: '#F5A623', fontWeight: '700', letterSpacing: 2, marginBottom: 8, marginTop: 4 },
   input: {
-    backgroundColor: 'white', borderRadius: 8, padding: 12,
-    marginBottom: 12, borderWidth: 1, borderColor: '#ddd',
+    backgroundColor: '#0D1117', borderRadius: 10, padding: 14,
+    marginBottom: 16, borderWidth: 1, borderColor: '#2A3349',
+    color: '#FFFFFF', fontSize: 14,
   },
-  multiline: { height: 100, textAlignVertical: 'top' },
+  multiline: { height: 110, textAlignVertical: 'top' },
+
   imageBtn: {
-    backgroundColor: '#e3f2fd', padding: 14, borderRadius: 8,
-    alignItems: 'center', marginBottom: 12,
+    borderWidth: 1, borderColor: '#F5A623', borderStyle: 'dashed',
+    borderRadius: 10, padding: 16, alignItems: 'center', marginBottom: 16,
   },
-  imageBtnText: { color: '#2196F3', fontWeight: '600' },
-  preview: { width: '100%', height: 200, borderRadius: 8, marginBottom: 12 },
+  imageBtnText: { color: '#F5A623', fontWeight: '600', fontSize: 14 },
+
+  imagePreviewWrapper: { marginBottom: 16 },
+  preview: { width: '100%', height: 180, borderRadius: 10, marginBottom: 8 },
+  removeImg: { alignItems: 'center' },
+
   submitBtn: {
-    backgroundColor: '#2196F3', padding: 16,
-    borderRadius: 8, alignItems: 'center',
+    backgroundColor: '#F5A623', padding: 16,
+    borderRadius: 12, alignItems: 'center', marginTop: 4,
   },
-  submitText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  submitText: { color: '#0D1117', fontWeight: '800', fontSize: 16 },
 });
