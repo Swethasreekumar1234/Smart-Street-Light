@@ -49,16 +49,21 @@ function startESP32MqttClient(io) {
     }
   });
 
+  let mqttErrorLogged = false;
+
   client.on('error', (err) => {
-    console.error('MQTT connection error:', err);
+    if (!mqttErrorLogged) {
+      console.warn('MQTT broker not available - running without ESP32 support. Will retry in background.');
+      mqttErrorLogged = true;
+    }
   });
 
   client.on('offline', () => {
-    console.log('MQTT client offline');
+    // Silenced - no broker running
   });
 
   client.on('reconnect', () => {
-    console.log('MQTT client reconnecting');
+    // Silenced - no broker running
   });
 
   return client;

@@ -2,8 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons } from '@expo/vector-icons';
+import { View, StyleSheet, Text } from 'react-native';
 
 import WeatherScreen from './screens/WeatherScreen';
 import ReportScreen from './screens/ReportScreen';
@@ -37,47 +38,86 @@ export default function App() {
     }
   };
 
+  const handleLocationUpdate = (location) => {
+    setCurrentLocation(location);
+    cacheData('location', location);
+  };
+
   return (
-    <NavigationContainer>
-      <Tab.Navigator
-        screenOptions={({ route }) => ({
-          headerStyle: { backgroundColor: '#2196F3' },
-          headerTintColor: 'white',
-          tabBarActiveTintColor: '#2196F3',
-          tabBarIcon: ({ color, size }) => {
-            const icons = {
-              Weather: 'cloud-outline',
-              Report: 'document-text-outline',
-              Energy: 'flash-outline',
-            };
-            return <Ionicons name={icons[route.name]} size={size} color={color} />;
-          },
-        })}
-      >
-        <Tab.Screen name="Weather">
-          {() => (
-            <WeatherScreen
-              onLocationUpdate={(loc) => {
-                setCurrentLocation(loc);
-                cacheData('location', loc);
-              }}
-            />
-          )}
-        </Tab.Screen>
+    <View style={styles.container}>
+      <StatusBar style="light" />
+      <NavigationContainer>
+        <Tab.Navigator
+          screenOptions={({ route }) => ({
+            tabBarIcon: ({ focused, color, size }) => {
+              let iconName;
+              
+              if (route.name === 'Weather') {
+                iconName = '🌆';
+              } else if (route.name === 'Report') {
+                iconName = '📋';
+              } else if (route.name === 'Energy') {
+                iconName = '⚡';
+              }
 
-        <Tab.Screen name="Report">
-          {() => (
-            <ReportScreen
-              currentLocation={currentLocation}
-              onCache={cacheData}
-            />
-          )}
-        </Tab.Screen>
+              return <Text style={[styles.tabIcon, { color, fontSize: size }]}>{iconName}</Text>;
+            },
+            tabBarActiveTintColor: '#F5A623',
+            tabBarInactiveTintColor: '#555',
+            tabBarStyle: {
+              backgroundColor: '#1C2333',
+              borderTopColor: '#2A3349',
+              height: 60,
+              paddingBottom: 8,
+              paddingTop: 8,
+            },
+            headerStyle: {
+              backgroundColor: '#1C2333',
+              borderBottomColor: '#2A3349',
+              borderBottomWidth: 1,
+            },
+            headerTintColor: '#FFFFFF',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            tabBarLabelStyle: {
+              fontSize: 12,
+              marginBottom: 4,
+            },
+          })}
+        >
+          <Tab.Screen name="Weather">
+            {() => (
+              <WeatherScreen
+                onLocationUpdate={handleLocationUpdate}
+              />
+            )}
+          </Tab.Screen>
 
-        <Tab.Screen name="Energy">
-          {() => <EnergyScreen />}
-        </Tab.Screen>
-      </Tab.Navigator>
-    </NavigationContainer>
+          <Tab.Screen name="Report">
+            {() => (
+              <ReportScreen
+                currentLocation={currentLocation}
+                onCache={cacheData}
+              />
+            )}
+          </Tab.Screen>
+
+          <Tab.Screen name="Energy">
+            {() => <EnergyScreen />}
+          </Tab.Screen>
+        </Tab.Navigator>
+      </NavigationContainer>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0D1117',
+  },
+  tabIcon: {
+    marginBottom: 2,
+  },
+});
